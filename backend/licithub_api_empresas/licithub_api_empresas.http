@@ -1,0 +1,6 @@
+@licithub_api_empresas_HostAddress = http://localhost:5173
+
+GET {{licithub_api_empresas_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
