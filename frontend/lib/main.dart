@@ -5,20 +5,44 @@ import 'package:http/http.dart' as http;
 // ============================================================================
 // SERVIÇO DE COMUNICAÇÃO HTTP COM O C#
 // ============================================================================
+const String apiBaseUrl = String.fromEnvironment(
+  'API_BASE_URL',
+  defaultValue: 'http://localhost:5173',
+);
+
 Future<Map<String, dynamic>> buscarDadosDashboard() async {
-  final url = Uri.parse('http://localhost:5173/api/dashboard');
-  
-  try {
-    final response = await http.get(url);
-    if (response.statusCode == 200) {
-      return jsonDecode(response.body) as Map<String, dynamic>;
-    } else {
-      throw Exception('Erro ao carregar dados: ${response.statusCode}');
-    }
-  } catch (e) {
-    print('Erro na ligação com a API: $e');
-    return {};
+  final url = Uri.parse('$apiBaseUrl/api/dashboard');
+  final response = await http.get(url);
+  if (response.statusCode != 200) {
+    throw Exception('Falha ao carregar o dashboard (HTTP ${response.statusCode})');
   }
+  return jsonDecode(response.body) as Map<String, dynamic>;
+}
+
+String formatarMoeda(dynamic valor) {
+  final numero = valor is num ? valor : num.tryParse(valor?.toString() ?? '') ?? 0;
+  final partes = numero.toStringAsFixed(2).split('.');
+  final inteiro = partes[0].replaceAllMapped(
+    RegExp(r'\B(?=(\d{3})+(?!\d))'),
+    (m) => '.',
+  );
+  return 'R\$ $inteiro,${partes[1]}';
+}
+
+class Edital {
+  final String titulo;
+  final String orgao;
+  final String objeto;
+  final String valor;
+  final List<String> itens;
+
+  const Edital({
+    required this.titulo,
+    required this.orgao,
+    required this.objeto,
+    required this.valor,
+    required this.itens,
+  });
 }
 
 void main() {
@@ -57,16 +81,16 @@ class MainLayout extends StatefulWidget {
 
 class _MainLayoutState extends State<MainLayout> {
   int _selectedIndex = 0;
-  bool _mostrandoDetalhes = false;
+  Edital? _editalSelecionado;
 
   @override
   Widget build(BuildContext context) {
     final List<Widget> pages = [
       const DashboardPage(),
       BuscarEditaisPage(
-        onAnalisar: () {
+        onAnalisar: (edital) {
           setState(() {
-            _mostrandoDetalhes = true;
+            _editalSelecionado = edital;
           });
         },
       ),
@@ -91,7 +115,7 @@ class _MainLayoutState extends State<MainLayout> {
                     children: [
                       const Icon(Icons.bolt, color: Colors.blueAccent, size: 28),
                       const SizedBox(width: 12),
-                      const Text('LicitHub', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
+                      const Flexible(child: Text('LicitHub', overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white))),
                     ],
                   ),
                 ),
@@ -108,13 +132,23 @@ class _MainLayoutState extends State<MainLayout> {
           Expanded(
             child: Container(
               color: const Color(0xFFF4F7F9),
-              child: _mostrandoDetalhes 
-                  ? DetalhesEditalPage(onBack: () {
-                      setState(() {
-                        _mostrandoDetalhes = false;
-                      });
-                    }) 
-                  : pages[_selectedIndex],
+              child: Stack(
+                children: [
+                  Offstage(
+                    offstage: _editalSelecionado != null,
+                    child: IndexedStack(index: _selectedIndex, children: pages),
+                  ),
+                  if (_editalSelecionado != null)
+                    DetalhesEditalPage(
+                      edital: _editalSelecionado!,
+                      onBack: () {
+                        setState(() {
+                          _editalSelecionado = null;
+                        });
+                      },
+                    ),
+                ],
+              ),
             ),
           ),
         ],
@@ -123,12 +157,12 @@ class _MainLayoutState extends State<MainLayout> {
   }
 
   Widget _buildMenuItem(int index, IconData icon, String title) {
-    final isSelected = _selectedIndex == index && !_mostrandoDetalhes;
+    final isSelected = _selectedIndex == index && _editalSelecionado == null;
     return InkWell(
       onTap: () {
         setState(() {
           _selectedIndex = index;
-          _mostrandoDetalhes = false;
+          _editalSelecionado = null;
         });
       },
       child: Container(
@@ -142,7 +176,7 @@ class _MainLayoutState extends State<MainLayout> {
           children: [
             Icon(icon, color: isSelected ? Colors.white : Colors.white60, size: 22),
             const SizedBox(width: 16),
-            Text(title, style: TextStyle(fontSize: 15, fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400, color: isSelected ? Colors.white : Colors.white60)),
+            Flexible(child: Text(title, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 15, fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400, color: isSelected ? Colors.white : Colors.white60))),
           ],
         ),
       ),
@@ -178,9 +212,37 @@ class _DashboardPageState extends State<DashboardPage> {
           return const Center(child: CircularProgressIndicator());
         }
 
+        if (snapshot.hasError) {
+          return Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.cloud_off, size: 48, color: Colors.black38),
+                const SizedBox(height: 16),
+                const Text(
+                  'Não foi possível carregar os indicadores.',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: Color(0xFF1E293B)),
+                ),
+                const SizedBox(height: 8),
+                Text('${snapshot.error}', style: const TextStyle(color: Colors.black54, fontSize: 13)),
+                const SizedBox(height: 16),
+                TextButton.icon(
+                  onPressed: () {
+                    setState(() {
+                      _dadosFuture = buscarDadosDashboard();
+                    });
+                  },
+                  icon: const Icon(Icons.refresh),
+                  label: const Text('Tentar novamente'),
+                ),
+              ],
+            ),
+          );
+        }
+
         final dados = snapshot.data ?? {};
         final licitacoesAtivas = dados['licitacoesAtivas']?.toString() ?? '0';
-        final disputasGanhas = dados['disputasGanhas']?.toString() ?? 'R\$ 0';
+        final disputasGanhas = formatarMoeda(dados['disputasGanhas']);
         final mensagemAlerta = dados['alerta']?.toString() ?? 'Sem alertas de momento.';
 
         return SingleChildScrollView(
@@ -374,9 +436,36 @@ class _DashboardPageState extends State<DashboardPage> {
 // PÁGINA 2: BUSCAR EDITAIS
 // ============================================================================
 class BuscarEditaisPage extends StatelessWidget {
-  final VoidCallback onAnalisar;
-  
+  final ValueChanged<Edital> onAnalisar;
+
   const BuscarEditaisPage({super.key, required this.onAnalisar});
+
+  static const List<Edital> editais = [
+    Edital(
+      titulo: 'Pregão Eletrônico 45/2026',
+      orgao: 'Prefeitura de São Paulo',
+      objeto: 'Contratação de serviços de limpeza predial para as unidades administrativas, com fornecimento de mão de obra, materiais e equipamentos.',
+      valor: 'R\$ 250.000,00',
+      itens: [
+        'Limpeza e conservação das áreas internas e externas',
+        'Fornecimento de materiais de higiene e limpeza',
+        'Equipe com supervisão dedicada',
+        'Capital social mínimo: R\$ 25.000',
+      ],
+    ),
+    Edital(
+      titulo: 'Pregão Eletrônico 12/2026',
+      orgao: 'Governo do Estado de SP',
+      objeto: 'Fornecimento de licenças de software de gestão, com serviços de implantação, treinamento e suporte técnico.',
+      valor: 'R\$ 840.000,00',
+      itens: [
+        'Licenças de uso por 24 meses',
+        'Implantação e migração de dados',
+        'Treinamento das equipes',
+        'Suporte técnico em horário comercial',
+      ],
+    ),
+  ];
 
   @override
   Widget build(BuildContext context) {
@@ -405,9 +494,9 @@ class BuscarEditaisPage extends StatelessWidget {
           Expanded(
             child: ListView(
               children: [
-                _buildCardEdital(icone: Icons.account_balance, corIcone: Colors.orange, titulo: 'Prefeitura de São Paulo - Pregão 45/2026', objeto: 'Serviços de limpeza', valor: 'R\$ 250.000,00'),
+                _buildCardEdital(icone: Icons.account_balance, corIcone: Colors.orange, edital: editais[0]),
                 const SizedBox(height: 16),
-                _buildCardEdital(icone: Icons.business, corIcone: Colors.redAccent, titulo: 'Governo do Estado de SP - Pregão 12/2026', objeto: 'Fornecimento de Software', valor: 'R\$ 840.000,00'),
+                _buildCardEdital(icone: Icons.business, corIcone: Colors.redAccent, edital: editais[1]),
               ],
             ),
           ),
@@ -427,7 +516,10 @@ class BuscarEditaisPage extends StatelessWidget {
     );
   }
 
-  Widget _buildCardEdital({required IconData icone, required Color corIcone, required String titulo, required String objeto, required String valor}) {
+  Widget _buildCardEdital({required IconData icone, required Color corIcone, required Edital edital}) {
+    final titulo = '${edital.orgao} - ${edital.titulo}';
+    final objeto = edital.objeto;
+    final valor = edital.valor;
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.04), blurRadius: 10, offset: const Offset(0, 4))]),
@@ -456,7 +548,7 @@ class BuscarEditaisPage extends StatelessWidget {
               const Icon(Icons.more_horiz, color: Colors.black38),
               const SizedBox(height: 32),
               ElevatedButton(
-                onPressed: onAnalisar,
+                onPressed: () => onAnalisar(edital),
                 style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF2563EB), foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)), elevation: 0),
                 child: const Text('Analisar Edital', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
               ),
@@ -488,30 +580,30 @@ class FunilPage extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 _buildKanbanColumn(
-                  titulo: 'Mapeados (3)',
+                  titulo: 'Mapeados',
                   cards: [
                     _buildKanbanCard('Prefeitura de SP - Limpeza', 'R\$ 250k'),
-                    _buildKanbanCard('Prefeitura de SP - Limpeza', 'R\$ 250k'),
-                    _buildKanbanCard('Prefeitura de SP - Limpeza', 'R\$ 120k'),
+                    _buildKanbanCard('Governo do Estado de SP - Software', 'R\$ 840k'),
+                    _buildKanbanCard('Secretaria de Educação - Uniformes', 'R\$ 120k'),
                   ],
                 ),
                 const SizedBox(width: 24),
                 _buildKanbanColumn(
-                  titulo: 'Documentação (2)',
+                  titulo: 'Documentação',
                   cards: [
                     _buildKanbanCard('Hospital das Clínicas - Insumos', 'R\$ 120k', progresso: 0.75, textoProgresso: '75% completo'),
                   ],
                 ),
                 const SizedBox(width: 24),
                 _buildKanbanColumn(
-                  titulo: 'Pronto para Lance (1)',
+                  titulo: 'Pronto para Lance',
                   cards: [
                     _buildKanbanCard('Tribunal de Justiça - TI', 'R\$ 95k'),
                   ],
                 ),
                 const SizedBox(width: 24),
                 _buildKanbanColumn(
-                  titulo: 'Resultados (2)',
+                  titulo: 'Resultados',
                   cards: [
                     _buildKanbanCard('Câmara de SP - Móveis', '(R\$ 45k)', tagResultado: '[Ganho]', corTag: Colors.green),
                   ],
@@ -537,7 +629,7 @@ class FunilPage extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(titulo, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
+            Text('$titulo (${cards.length})', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
             const SizedBox(height: 16),
             Expanded(
               child: ListView(
@@ -580,9 +672,10 @@ class FunilPage extends StatelessWidget {
 // PÁGINA 4: DETALHES DO EDITAL (SUB-PÁGINA)
 // ============================================================================
 class DetalhesEditalPage extends StatelessWidget {
+  final Edital edital;
   final VoidCallback onBack;
-  
-  const DetalhesEditalPage({super.key, required this.onBack});
+
+  const DetalhesEditalPage({super.key, required this.edital, required this.onBack});
 
   @override
   Widget build(BuildContext context) {
@@ -623,9 +716,11 @@ class DetalhesEditalPage extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text('Pregão Eletrônico 45/2026 -\nPrefeitura de SP', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
+                        Text('${edital.titulo} -\n${edital.orgao}', style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
                         const SizedBox(height: 16),
-                        const Text('Lorem ipsum dolor sit amet, consectetur adipiscing elit. Texto os prescimento descontbiner em marosas de feitorões públicas. Evita regurado de enits licitações para uma conseneten e anoura initsstora responoúsda. Pera cen com consuretana bs download.', style: TextStyle(fontSize: 15, color: Colors.black54, height: 1.5)),
+                        Text(edital.objeto, style: const TextStyle(fontSize: 15, color: Colors.black54, height: 1.5)),
+                        const SizedBox(height: 12),
+                        Text('Valor estimado: ${edital.valor}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: Color(0xFF10B981))),
                         const SizedBox(height: 24),
                         OutlinedButton.icon(
                           onPressed: () {},
@@ -636,12 +731,7 @@ class DetalhesEditalPage extends StatelessWidget {
                         const SizedBox(height: 32),
                         const Text('Itens licitados', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Color(0xFF1E293B))),
                         const SizedBox(height: 16),
-                        _buildBullet('Itens de Elemento o Conneesto'),
-                        _buildBullet('Itens de Corpultarios'),
-                        _buildBullet('Itens de Mudecira de - Conoticidade'),
-                        _buildBullet('Itens de Elonsentamento'),
-                        _buildBullet('Capital Social mínimo: Simóro'),
-                        _buildBullet('Capital Social mínimo: R\$ 25.000'),
+                        ...edital.itens.map(_buildBullet),
                       ],
                     ),
                   ),
