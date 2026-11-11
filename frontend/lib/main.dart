@@ -176,7 +176,7 @@ class _MainLayoutState extends State<MainLayout> {
           children: [
             Icon(icon, color: isSelected ? Colors.white : Colors.white60, size: 22),
             const SizedBox(width: 16),
-            Text(title, style: TextStyle(fontSize: 15, fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400, color: isSelected ? Colors.white : Colors.white60)),
+            Flexible(child: Text(title, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 15, fontWeight: isSelected ? FontWeight.w600 : FontWeight.w400, color: isSelected ? Colors.white : Colors.white60))),
           ],
         ),
       ),
