@@ -4,8 +4,8 @@
 -- pre-requisito no servidor:  default-time-zone = '+00:00'
 --   tudo é gravado em UTC. A API de origem informa horário de Brasília.
 -- convenções: utf8mb4; DECIMAL para dinheiro; TINYINT(1) para
---   booleano (mais performático); PK BIGINT; soft delete (excluido_em) só na empresa (a conta
---   do cliente); o login é bloqueado com usuario.ativo = 0.
+--   booleano (mais performático); PK BIGINT; soft delete (dh_exclusao) só na empresa (a conta
+--   do cliente); o login é bloqueado com tb_usuarios.fl_ativo = 0.
 -- =====================================================================
 
 CREATE DATABASE IF NOT EXISTS db_licitacoes
@@ -273,8 +273,8 @@ CREATE TABLE tb_alertas_licitacoes (
   CONSTRAINT fk_alertas_licitacoes_licitacoes      FOREIGN KEY (id_licitacao)      REFERENCES tb_licitacoes (id_licitacao)
 );
 
--- LGPD (a implementar na aplicação): excluir conta = empresa.excluido_em
--- preenchido, usuario.ativo = 0 e anonimização do e-mail de login e dos
+-- LGPD (a implementar na aplicação): excluir conta = tb_empresas.dh_exclusao
+-- preenchido, tb_usuarios.fl_ativo = 0 e anonimização do e-mail de login e dos
 -- e-mails/telefones de contato; manter apenas o que a lei exigir. Toda
--- consulta de dado privado deve filtrar por empresa_id (no EF Core:
--- HasQueryFilter), obtido a partir do usuário autenticado.
+-- consulta de dado privado deve filtrar por id_empresa, obtido a partir
+-- do usuário autenticado.

@@ -1,43 +1,84 @@
+// Program - composicao da API, CORS restrito, limite de taxa e endpoint do dashboard
 using licithub_api_empresas.Services;
+using Microsoft.AspNetCore.RateLimiting;
+using MySqlConnector;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Configuração CORS
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowFlutter", policy => 
-        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
-});
-
-builder.Services.AddHttpClient<PncpService>();
-builder.Services.AddSingleton<EditalRepository>();
-
-var app = builder.Build();
-app.UseCors("AllowFlutter");
-
-// Endpoint Dashboard 100% Dinâmico do MySQL + PNCP
-app.MapGet("/api/dashboard", async (PncpService pncpService, EditalRepository repository) =>
-{
-    // 1. Ingestão real do PNCP
-    var dadosGov = await pncpService.ObterEditaisAbertosAsync();
-    if (dadosGov?.Data != null && dadosGov.Data.Any())
+    options.AddPolicy("Frontend", policy =>
     {
-        await repository.SalvarEditaisAsync(dadosGov.Data);
-    }
-
-    // 2. Consulta de métricas reais no banco
-    var (ativas, totalGanho, ultimoOrgao) = await repository.ObterMetricasDashboardAsync();
-
-    string alertaDinamico = string.IsNullOrEmpty(ultimoOrgao)
-        ? "Nenhuma licitação encontrada no banco."
-        : $"Último edital real importado: {ultimoOrgao}";
-
-    return Results.Ok(new
-    {
-        licitacoesAtivas = ativas,
-        disputasGanhas = totalGanho.ToString("C2"), // Retorna R$ 0,00 se não houver vitórias registradas
-        alerta = alertaDinamico
+        if (builder.Environment.IsDevelopment())
+        {
+            policy.SetIsOriginAllowed(origem =>
+                Uri.TryCreate(origem, UriKind.Absolute, out var uri) && uri.IsLoopback);
+        }
+        else
+        {
+            var origens = builder.Configuration.GetSection("Cors:OrigensPermitidas").Get<string[]>() ?? [];
+            policy.WithOrigins(origens);
+        }
+        policy.AllowAnyMethod().AllowAnyHeader();
     });
 });
+
+builder.Services.AddRateLimiter(options =>
+{
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.AddFixedWindowLimiter("padrao", limitador =>
+    {
+        limitador.PermitLimit = 30;
+        limitador.Window = TimeSpan.FromMinutes(1);
+        limitador.QueueLimit = 0;
+    });
+});
+
+builder.Services.AddHttpClient<PncpService>(cliente =>
+{
+    cliente.BaseAddress = new Uri("https://pncp.gov.br/api/consulta/");
+    cliente.DefaultRequestHeaders.Add("Accept", "application/json");
+    cliente.DefaultRequestHeaders.Add("User-Agent", "LicitHub/1.0 (projeto academico Fatec)");
+});
+builder.Services.AddSingleton<EditalRepository>();
+builder.Services.AddHostedService<SincronizacaoPncpService>();
+
+var app = builder.Build();
+
+if (!app.Environment.IsDevelopment())
+{
+    app.UseHttpsRedirection();
+}
+
+app.UseCors("Frontend");
+app.UseRateLimiter();
+
+app.MapGet("/api/dashboard", async (EditalRepository repository, ILogger<Program> logger) =>
+{
+    try
+    {
+        var metricas = await repository.ObterMetricasDashboardAsync();
+
+        var alerta = string.IsNullOrEmpty(metricas.UltimoOrgao)
+            ? "Nenhuma licitação encontrada no banco."
+            : $"Publicação mais recente importada: {metricas.UltimoOrgao}";
+
+        return Results.Ok(new
+        {
+            licitacoesAtivas = metricas.Ativas,
+            disputasGanhas = metricas.TotalGanho,
+            alerta
+        });
+    }
+    catch (MySqlException ex)
+    {
+        logger.LogError(ex, "Falha ao consultar as métricas do dashboard");
+        return Results.Problem(
+            title: "Banco de dados indisponível",
+            detail: "Não foi possível consultar as métricas do dashboard.",
+            statusCode: StatusCodes.Status503ServiceUnavailable);
+    }
+}).RequireRateLimiting("padrao");
 
 app.Run();
