@@ -115,7 +115,7 @@ class _MainLayoutState extends State<MainLayout> {
                     children: [
                       const Icon(Icons.bolt, color: Colors.blueAccent, size: 28),
                       const SizedBox(width: 12),
-                      const Text('LicitHub', style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white)),
+                      const Flexible(child: Text('LicitHub', overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.white))),
                     ],
                   ),
                 ),
