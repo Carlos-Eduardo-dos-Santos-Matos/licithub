@@ -1,0 +1,38 @@
+@licithub_api_usuarios_HostAddress = http://localhost:5285
+
+### Registrar usuário
+POST {{licithub_api_usuarios_HostAddress}}/api/auth/registrar
+Content-Type: application/json
+
+{
+  "nome": "Usuário de Teste",
+  "email": "usuario@exemplo.com",
+  "senha": "SenhaSegura123"
+}
+
+### Login
+POST {{licithub_api_usuarios_HostAddress}}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "usuario@exemplo.com",
+  "senha": "SenhaSegura123"
+}
+
+### Renovar token
+POST {{licithub_api_usuarios_HostAddress}}/api/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "COLE_O_REFRESH_TOKEN_AQUI"
+}
+
+### Usuário autenticado
+GET {{licithub_api_usuarios_HostAddress}}/api/auth/me
+Authorization: Bearer COLE_O_ACCESS_TOKEN_AQUI
+
+### Logout
+POST {{licithub_api_usuarios_HostAddress}}/api/auth/logout
+Authorization: Bearer COLE_O_ACCESS_TOKEN_AQUI
+
+###
