@@ -1,4 +1,3 @@
-// PncpService - consulta paginada de contratacoes com proposta em aberto na API do PNCP
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -19,6 +18,7 @@ public class PncpService
     private readonly HttpClient _httpClient;
     private readonly ILogger<PncpService> _logger;
     private readonly int[] _modalidades;
+    private readonly int _diasJanelaProposta;
     private readonly int _tamanhoPagina;
     private readonly int _maxPaginasPorModalidade;
 
@@ -26,15 +26,17 @@ public class PncpService
     {
         _httpClient = httpClient;
         _logger = logger;
-        _modalidades = configuration.GetSection("Pncp:Modalidades").Get<int[]>() ?? [6];
+        _modalidades = configuration.GetSection("Pncp:Modalidades").Get<int[]>() ?? [6, 8];
+        _diasJanelaProposta = Math.Clamp(configuration.GetValue("Pncp:DiasJanelaProposta", 30), 1, 90);
         _tamanhoPagina = Math.Clamp(configuration.GetValue("Pncp:TamanhoPagina", 50), 10, 50);
-        _maxPaginasPorModalidade = Math.Max(1, configuration.GetValue("Pncp:MaxPaginasPorModalidade", 10));
+        _maxPaginasPorModalidade = Math.Max(1, configuration.GetValue("Pncp:MaxPaginasPorModalidade", 5));
     }
 
     public async Task<List<ContratacaoPncp>> ObterContratacoesComPropostaAbertaAsync(CancellationToken cancellationToken)
     {
-        var contratacoes = new List<ContratacaoPncp>();
-        var dataFinal = HojeEmBrasilia().ToString("yyyyMMdd");
+        var mapa = new Dictionary<string, ContratacaoPncp>(StringComparer.OrdinalIgnoreCase);
+        var hoje = HojeEmBrasilia();
+        var dataFinalProposta = hoje.AddDays(_diasJanelaProposta).ToString("yyyyMMdd");
 
         foreach (var modalidade in _modalidades)
         {
@@ -43,57 +45,100 @@ public class PncpService
 
             do
             {
-                var endpoint = $"v1/contratacoes/proposta?dataFinal={dataFinal}" +
+                var endpoint = $"v1/contratacoes/proposta?dataFinal={dataFinalProposta}" +
                                $"&codigoModalidadeContratacao={modalidade}" +
                                $"&pagina={pagina}&tamanhoPagina={_tamanhoPagina}";
 
                 var resposta = await _httpClient.GetAsync(endpoint, cancellationToken);
 
                 if (resposta.StatusCode == HttpStatusCode.NoContent)
-                {
-                    _logger.LogInformation("PNCP sem registros para a modalidade {Modalidade}", modalidade);
                     break;
-                }
 
                 resposta.EnsureSuccessStatusCode();
 
                 var corpo = await resposta.Content.ReadAsStringAsync(cancellationToken);
                 if (string.IsNullOrWhiteSpace(corpo))
-                {
                     break;
-                }
 
                 var paginaResposta = JsonSerializer.Deserialize<PncpRespostaPagina>(corpo, OpcoesJson);
                 if (paginaResposta?.Data is null || paginaResposta.Data.Count == 0)
-                {
                     break;
-                }
 
                 foreach (var item in paginaResposta.Data)
                 {
                     var dados = item.Deserialize<ContratacaoPncpDto>(OpcoesJson);
-                    if (dados is not null)
+                    if (dados?.NumeroControlePncp is not null)
                     {
-                        contratacoes.Add(new ContratacaoPncp(dados, item.GetRawText()));
+                        mapa[dados.NumeroControlePncp] = new ContratacaoPncp(dados, item.GetRawText());
                     }
                 }
 
                 totalPaginas = paginaResposta.TotalPaginas;
-
-                if (pagina >= _maxPaginasPorModalidade && pagina < totalPaginas)
-                {
-                    _logger.LogWarning(
-                        "PNCP: modalidade {Modalidade} tem {TotalPaginas} páginas; importadas {Paginas} nesta execução",
-                        modalidade, totalPaginas, pagina);
+                if (pagina >= _maxPaginasPorModalidade)
                     break;
-                }
 
                 pagina++;
             } while (pagina <= totalPaginas);
         }
 
-        _logger.LogInformation("PNCP: {Quantidade} contratações obtidas", contratacoes.Count);
-        return contratacoes;
+        // Busca complementar por data de publicação (últimos 7 dias) para garantir resultados recentes
+        var dataInicialPub = hoje.AddDays(-7).ToString("yyyyMMdd");
+        var dataFinalPub = hoje.ToString("yyyyMMdd");
+        foreach (var modalidade in _modalidades)
+        {
+            var endpointPub = $"v1/contratacoes/publicacao?dataInicial={dataInicialPub}&dataFinal={dataFinalPub}" +
+                              $"&codigoModalidadeContratacao={modalidade}&pagina=1&tamanhoPagina={_tamanhoPagina}";
+
+            var respPub = await _httpClient.GetAsync(endpointPub, cancellationToken);
+            if (!respPub.IsSuccessStatusCode || respPub.StatusCode == HttpStatusCode.NoContent)
+                continue;
+
+            var corpoPub = await respPub.Content.ReadAsStringAsync(cancellationToken);
+            if (string.IsNullOrWhiteSpace(corpoPub))
+                continue;
+
+            var paginaPub = JsonSerializer.Deserialize<PncpRespostaPagina>(corpoPub, OpcoesJson);
+            if (paginaPub?.Data is null)
+                continue;
+
+            foreach (var item in paginaPub.Data)
+            {
+                var dados = item.Deserialize<ContratacaoPncpDto>(OpcoesJson);
+                if (dados?.NumeroControlePncp is not null && !mapa.ContainsKey(dados.NumeroControlePncp))
+                {
+                    mapa[dados.NumeroControlePncp] = new ContratacaoPncp(dados, item.GetRawText());
+                }
+            }
+        }
+
+        _logger.LogInformation("PNCP: {Quantidade} contratações únicas obtidas", mapa.Count);
+        return mapa.Values.ToList();
+    }
+
+    public async Task<List<ItemLicitacaoPncpDto>> ObterItensContratacaoAsync(
+        string numeroControlePncp, CancellationToken cancellationToken)
+    {
+        // Formato esperado: CNPJ-1-SEQUENCIAL/ANO (ex: 36922587000133-1-000007/2026)
+        var partesBarra = numeroControlePncp.Split('/');
+        if (partesBarra.Length != 2 || !int.TryParse(partesBarra[1], out var ano))
+            return [];
+
+        var partesTraco = partesBarra[0].Split('-');
+        if (partesTraco.Length < 3 || !int.TryParse(partesTraco[2], out var sequencial))
+            return [];
+
+        var cnpj = partesTraco[0];
+        var urlItens = $"https://pncp.gov.br/api/pncp/v1/orgaos/{cnpj}/compras/{ano}/{sequencial}/itens?pagina=1&tamanhoPagina=50";
+
+        var resposta = await _httpClient.GetAsync(urlItens, cancellationToken);
+        if (!resposta.IsSuccessStatusCode || resposta.StatusCode == HttpStatusCode.NoContent)
+            return [];
+
+        var json = await resposta.Content.ReadAsStringAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(json))
+            return [];
+
+        return JsonSerializer.Deserialize<List<ItemLicitacaoPncpDto>>(json, OpcoesJson) ?? [];
     }
 
     public static DateTime HojeEmBrasilia()
@@ -102,9 +147,7 @@ public class PncpService
     public static DateTime? HorarioBrasiliaParaUtc(DateTime? horarioBrasilia)
     {
         if (horarioBrasilia is null)
-        {
             return null;
-        }
 
         var semFuso = DateTime.SpecifyKind(horarioBrasilia.Value, DateTimeKind.Unspecified);
         return TimeZoneInfo.ConvertTimeToUtc(semFuso, FusoBrasilia);
@@ -196,4 +239,25 @@ public class UnidadeOrgaoPncpDto
 
     [JsonPropertyName("municipioNome")]
     public string? MunicipioNome { get; set; }
+}
+
+public class ItemLicitacaoPncpDto
+{
+    [JsonPropertyName("numeroItem")]
+    public int NumeroItem { get; set; }
+
+    [JsonPropertyName("descricao")]
+    public string? Descricao { get; set; }
+
+    [JsonPropertyName("quantidade")]
+    public decimal? Quantidade { get; set; }
+
+    [JsonPropertyName("unidadeMedida")]
+    public string? UnidadeMedida { get; set; }
+
+    [JsonPropertyName("valorUnitarioEstimado")]
+    public decimal? ValorUnitarioEstimado { get; set; }
+
+    [JsonPropertyName("tipoBeneficioNome")]
+    public string? TipoBeneficioNome { get; set; }
 }

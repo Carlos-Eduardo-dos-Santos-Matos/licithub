@@ -9,13 +9,24 @@ using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("Frontend", policy =>
+    {
+        policy.SetIsOriginAllowed(origem =>
+            Uri.TryCreate(origem, UriKind.Absolute, out var uri) && uri.IsLoopback)
+            .AllowAnyMethod()
+            .AllowAnyHeader();
+    });
+});
+
 builder.Services.AddOpenApi();
 builder.Services.AddControllers();
 builder.Services.AddProblemDetails();
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
-    ?? throw new InvalidOperationException(
-        "ConnectionStrings:DefaultConnection não configurada. Defina-a em appsettings ou ConnectionStrings__DefaultConnection.");
+    ?? throw new InvalidOperationException("ConnectionStrings:DefaultConnection não configurada.");
+
 builder.Services.AddDbContext<ContextoBanco>(options =>
     options.UseMySql(connectionString, ServerVersion.AutoDetect(connectionString)));
 
@@ -26,10 +37,7 @@ builder.Services.AddOptions<JwtOptions>()
     .ValidateOnStart();
 
 var jwtConfiguration = builder.Configuration.GetSection(JwtOptions.SectionName);
-var jwtKey = jwtConfiguration["Key"];
-if (string.IsNullOrWhiteSpace(jwtKey) || jwtKey.Length < 32)
-    throw new InvalidOperationException(
-        "Jwt:Key não configurada ou muito curta. Defina uma chave com pelo menos 32 caracteres.");
+var jwtKey = jwtConfiguration["Key"]!;
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
@@ -46,6 +54,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ClockSkew = TimeSpan.FromSeconds(30)
         };
     });
+
 builder.Services.AddAuthorization();
 builder.Services.AddScoped<IAuthService, AuthService>();
 builder.Services.AddExceptionHandler<ApiExceptionHandler>();
@@ -54,9 +63,11 @@ var app = builder.Build();
 
 if (app.Environment.IsDevelopment())
     app.MapOpenApi();
+else
+    app.UseHttpsRedirection();
 
 app.UseExceptionHandler();
-app.UseHttpsRedirection();
+app.UseCors("Frontend");
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();

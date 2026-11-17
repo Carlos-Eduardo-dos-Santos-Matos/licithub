@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'configuracoes/carregador_fontes.dart';
 import 'configuracoes/tema_app.dart';
-import 'servicos/api_servico.dart';
 import 'telas/painel/layout_principal.dart';
 import 'telas/publico/tela_inicial.dart';
 import 'telas/publico/tela_login.dart';
@@ -44,23 +43,6 @@ class _LicitHubAppState extends State<LicitHubApp> {
     }
   }
 
-  void _concluirLogin(BuildContext navContext, String origem, {String? email}) {
-    debugPrint(
-      '[LicitHub Auth] Login acionado via $origem${email != null ? ' ($email)' : ''}',
-    );
-    buscarDadosDashboard().then((dados) {
-      debugPrint(
-        '[LicitHub Auth] Conexão com backend validada (${dados.keys.join(', ')})',
-      );
-    }).catchError((Object erro) {
-      debugPrint(
-        '[LicitHub Auth] Backend offline ou indisponível no momento: $erro',
-      );
-    });
-
-    Navigator.of(navContext).pushReplacementNamed('/painel');
-  }
-
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -71,15 +53,9 @@ class _LicitHubAppState extends State<LicitHubApp> {
       routes: {
         '/': (context) => const TelaInicial(),
         '/login': (routeContext) => TelaLogin(
-              onLoginSuccess: (email) => _concluirLogin(
-                routeContext,
-                'formulário de e-mail/senha',
-                email: email,
-              ),
-              onGoogleLogin: () => _concluirLogin(
-                routeContext,
-                'Google OAuth (mock)',
-              ),
+              onLoginSuccess: (_) {
+                Navigator.of(routeContext).pushReplacementNamed('/painel');
+              },
             ),
         '/painel': (context) => const LayoutPrincipal(),
         '/dashboard': (context) => const LayoutPrincipal(),
