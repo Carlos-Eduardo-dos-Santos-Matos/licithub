@@ -94,6 +94,15 @@ class _TelaLoginState extends State<TelaLogin> {
       if (mounted) setState(() => _carregando = false);
     }
   }
+  Future<void> _entrarComoAdmin() async {
+    setState(() {
+      _modoCadastro = false;
+      _emailController.text = 'admin@licithub.com';
+      _senhaController.text = 'Admin@123';
+      _mensagemFeedback = null;
+    });
+    await _submeterFormulario();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -315,6 +324,24 @@ class _TelaLoginState extends State<TelaLogin> {
                       _modoCadastro ? 'Criar conta e entrar' : 'Entrar',
                       style: const TextStyle(fontSize: 14.5, fontWeight: FontWeight.w600),
                     ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            height: 42,
+            child: OutlinedButton.icon(
+              onPressed: _carregando ? null : _entrarComoAdmin,
+              icon: const Icon(Icons.admin_panel_settings_outlined, size: 18),
+              label: const Text(
+                'Acesso rápido Admin (admin@licithub.com)',
+                style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
+              ),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: const Color(0xFF004CA3),
+                side: const BorderSide(color: Color(0xFFBFD4F2)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
+              ),
             ),
           ),
           const SizedBox(height: 18),

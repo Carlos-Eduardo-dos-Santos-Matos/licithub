@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'configuracoes/carregador_fontes.dart';
 import 'configuracoes/tema_app.dart';
+import 'servicos/api_servico.dart';
 import 'telas/painel/layout_principal.dart';
 import 'telas/publico/tela_inicial.dart';
 import 'telas/publico/tela_login.dart';
@@ -18,7 +19,10 @@ export 'telas/painel/tela_funil.dart';
 export 'telas/publico/tela_inicial.dart';
 export 'telas/publico/tela_login.dart';
 
-void main() {
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await SessaoUsuario.carregarSessao();
+  await acessibilidadeApp.carregarPreferencias();
   runApp(const LicitHubApp());
 }
 
@@ -43,22 +47,49 @@ class _LicitHubAppState extends State<LicitHubApp> {
     }
   }
 
+  Widget _construirRotaProtegida(BuildContext routeContext) {
+    if (SessaoUsuario.estaAutenticado) {
+      return const LayoutPrincipal();
+    }
+    return TelaLogin(
+      onLoginSuccess: (_) {
+        Navigator.of(routeContext).pushReplacementNamed('/painel');
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'LicitHub MVP',
-      debugShowCheckedModeBanner: false,
-      theme: TemaApp.obterTemaClaro(),
-      initialRoute: '/',
-      routes: {
-        '/': (context) => const TelaInicial(),
-        '/login': (routeContext) => TelaLogin(
-              onLoginSuccess: (_) {
-                Navigator.of(routeContext).pushReplacementNamed('/painel');
-              },
-            ),
-        '/painel': (context) => const LayoutPrincipal(),
-        '/dashboard': (context) => const LayoutPrincipal(),
+    return ListenableBuilder(
+      listenable: acessibilidadeApp,
+      builder: (context, _) {
+        return MaterialApp(
+          title: 'LicitHub MVP',
+          debugShowCheckedModeBanner: false,
+          theme: TemaApp.obterTemaClaro(),
+          darkTheme: TemaApp.obterTemaEscuro(),
+          themeMode: acessibilidadeApp.themeMode,
+          builder: (context, child) {
+            final media = MediaQuery.of(context);
+            return MediaQuery(
+              data: media.copyWith(
+                textScaler: TextScaler.linear(acessibilidadeApp.escalaFonte),
+              ),
+              child: child ?? const SizedBox.shrink(),
+            );
+          },
+          initialRoute: '/',
+          routes: {
+            '/': (context) => const TelaInicial(),
+            '/login': (routeContext) => TelaLogin(
+                  onLoginSuccess: (_) {
+                    Navigator.of(routeContext).pushReplacementNamed('/painel');
+                  },
+                ),
+            '/painel': _construirRotaProtegida,
+            '/dashboard': _construirRotaProtegida,
+          },
+        );
       },
     );
   }
