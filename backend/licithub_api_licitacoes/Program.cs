@@ -42,7 +42,7 @@ builder.Services.AddHttpClient<PncpService>(cliente =>
     cliente.BaseAddress = new Uri("https://pncp.gov.br/api/consulta/");
     cliente.Timeout = TimeSpan.FromSeconds(45);
     cliente.DefaultRequestHeaders.Add("Accept", "application/json");
-    cliente.DefaultRequestHeaders.Add("User-Agent", "LicitHub/1.0 (projeto academico SENAI)");
+    cliente.DefaultRequestHeaders.Add("User-Agent", "LicitHub/1.0");
 });
 
 builder.Services.AddSingleton<EditalRepository>();
@@ -57,7 +57,7 @@ if (!app.Environment.IsDevelopment())
 app.UseCors("Frontend");
 app.UseRateLimiter();
 
-var jwtKey = builder.Configuration["Jwt:Key"] ?? "LicitHub_ChaveSecreta_Producao_2026_SENAI_TCC_99!";
+var jwtKey = builder.Configuration["Jwt:Key"] ?? "LicitHub_ChaveSecreta_Producao_2026_TCC_99!";
 
 (long idUsuario, long idEmpresa)? ExtrairSessao(HttpRequest request)
 {
