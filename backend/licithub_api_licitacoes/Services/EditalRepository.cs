@@ -236,7 +236,7 @@ public class EditalRepository
     }
 
     public async Task<ResultadoBuscaLicitacoesDto> BuscarLicitacoesAsync(
-        string? termo, string? uf, decimal? valorMinimo, int pagina, int tamanhoPagina)
+        string? termo, string? uf, decimal? valorMinimo, string? modalidade, string? situacao, string? municipio, int pagina, int tamanhoPagina)
     {
         pagina = Math.Max(1, pagina);
         tamanhoPagina = Math.Clamp(tamanhoPagina, 5, 50);
@@ -264,6 +264,24 @@ public class EditalRepository
         {
             filtros.Add("l.vl_estimado >= @ValorMin");
             parametros.Add(new MySqlParameter("@ValorMin", valorMinimo.Value));
+        }
+
+        if (!string.IsNullOrWhiteSpace(modalidade))
+        {
+            filtros.Add("l.nm_modalidade LIKE @Modalidade");
+            parametros.Add(new MySqlParameter("@Modalidade", $"%{modalidade.Trim()}%"));
+        }
+
+        if (!string.IsNullOrWhiteSpace(situacao))
+        {
+            filtros.Add("l.st_situacao LIKE @Situacao");
+            parametros.Add(new MySqlParameter("@Situacao", $"%{situacao.Trim()}%"));
+        }
+
+        if (!string.IsNullOrWhiteSpace(municipio))
+        {
+            filtros.Add("l.nm_municipio LIKE @Municipio");
+            parametros.Add(new MySqlParameter("@Municipio", $"%{municipio.Trim()}%"));
         }
 
         var where = filtros.Count > 0 ? "WHERE " + string.Join(" AND ", filtros) : "";

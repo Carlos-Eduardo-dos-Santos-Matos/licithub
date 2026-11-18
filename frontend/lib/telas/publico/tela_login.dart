@@ -50,6 +50,14 @@ class _TelaLoginState extends State<TelaLogin> {
       setState(() => _mensagemFeedback = 'Preencha seu e-mail e sua senha.');
       return;
     }
+    if (!RegExp(r'^[^\s@]+@[^\s@]+\.[^\s@]+$').hasMatch(email)) {
+      setState(() => _mensagemFeedback = 'Informe um endereço de e-mail válido.');
+      return;
+    }
+    if (senha.length < 6) {
+      setState(() => _mensagemFeedback = 'A senha deve possuir pelo menos 6 caracteres.');
+      return;
+    }
 
     if (_modoCadastro && _nomeController.text.trim().isEmpty) {
       setState(() => _mensagemFeedback = 'Informe seu nome completo para criar a conta.');

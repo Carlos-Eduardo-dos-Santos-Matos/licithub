@@ -16,6 +16,8 @@ class TelaBuscarEditais extends StatefulWidget {
 class _TelaBuscarEditaisState extends State<TelaBuscarEditais> {
   final TextEditingController _buscaController = TextEditingController();
   String? _ufSelecionada;
+  String? _modalidadeSelecionada;
+  String? _situacaoSelecionada;
   bool _apenasAcima100k = false;
   late Future<List<Edital>> _editaisFuture;
 
@@ -37,6 +39,8 @@ class _TelaBuscarEditaisState extends State<TelaBuscarEditais> {
         termo: _buscaController.text,
         uf: _ufSelecionada,
         valorMinimo: _apenasAcima100k ? 100000 : null,
+        modalidade: _modalidadeSelecionada,
+        situacao: _situacaoSelecionada,
       );
     });
   }
@@ -120,6 +124,38 @@ class _TelaBuscarEditaisState extends State<TelaBuscarEditais> {
                 selected: _apenasAcima100k,
                 onSelected: (sel) {
                   _apenasAcima100k = sel;
+                  _carregar();
+                },
+              ),
+              FilterChip(
+                label: const Text('Pregão eletrônico'),
+                selected: _modalidadeSelecionada == 'Pregão',
+                onSelected: (sel) {
+                  _modalidadeSelecionada = sel ? 'Pregão' : null;
+                  _carregar();
+                },
+              ),
+              FilterChip(
+                label: const Text('Concorrência'),
+                selected: _modalidadeSelecionada == 'Concorrência',
+                onSelected: (sel) {
+                  _modalidadeSelecionada = sel ? 'Concorrência' : null;
+                  _carregar();
+                },
+              ),
+              FilterChip(
+                label: const Text('Dispensa'),
+                selected: _modalidadeSelecionada == 'Dispensa',
+                onSelected: (sel) {
+                  _modalidadeSelecionada = sel ? 'Dispensa' : null;
+                  _carregar();
+                },
+              ),
+              FilterChip(
+                label: const Text('Divulgada no PNCP'),
+                selected: _situacaoSelecionada == 'Divulgada no PNCP',
+                onSelected: (sel) {
+                  _situacaoSelecionada = sel ? 'Divulgada no PNCP' : null;
                   _carregar();
                 },
               ),

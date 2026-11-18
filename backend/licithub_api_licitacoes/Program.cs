@@ -124,10 +124,14 @@ app.MapGet("/api/licitacoes", async (
     string? q,
     string? uf,
     decimal? valorMin,
+    string? modalidade,
+    string? situacao,
+    string? municipio,
     int pagina = 1,
     int tamanhoPagina = 20) =>
 {
-    var resultado = await repository.BuscarLicitacoesAsync(q, uf, valorMin, pagina, tamanhoPagina);
+    var resultado = await repository.BuscarLicitacoesAsync(
+        q, uf, valorMin, modalidade, situacao, municipio, pagina, tamanhoPagina);
     return Results.Ok(resultado);
 }).RequireRateLimiting("padrao");
 
